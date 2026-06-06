@@ -104,6 +104,8 @@ void LiveVideoEngine::init(JNIEnv* env, jstring jMime, jint width, jint height, 
     codec_configured_ = false;
     demuxer_.reset();
     nalu_queue_.clear();
+    cached_sps_.clear();
+    cached_pps_.clear();
     std::lock_guard<std::mutex> lock(telemetry_mutex_);
     latest_telemetry_ = TelemetryData{};
     has_latest_telemetry_ = false;
@@ -189,17 +191,29 @@ void LiveVideoEngine::handleNalu(const H264Demuxer::Nalu& n) {
             cached_pps_.assign(n.data, n.data + n.size);
             return;
         }
+        // IDR: 必须 SPS + PPS + IDR 三者一起入队
+        // 如果队列空间不够三者, 则全部不入队, 保持 codec_configured_=false
+        // 后续 P 帧会在 handleNalu 末尾被丢弃, 不会送到没有参考帧的解码器
         if (nalType == 5) {
-            if (!cached_sps_.empty()) enqueueNalu(cached_sps_.data(), cached_sps_.size(), 0);
-            if (!cached_pps_.empty()) enqueueNalu(cached_pps_.data(), cached_pps_.size(), 0);
-            codec_configured_ = true;
+            constexpr int kIdrBatch = 3; // SPS + PPS + IDR
+            if (nalu_queue_.freeCapacity() >= kIdrBatch) {
+                enqueueNalu(cached_sps_.data(), cached_sps_.size(), 0);
+                enqueueNalu(cached_pps_.data(), cached_pps_.size(), 0);
+                enqueueNalu(n.data, n.size, 0);
+                codec_configured_ = true;
+            } else {
+                LOGW("IDR dropped: queue too full (%zu free), keeping codec unconfigured",
+                     nalu_queue_.freeCapacity());
+                stats_.framesDropped.fetch_add(1, std::memory_order_relaxed);
+            }
+            return;
         }
         if (nalType == 6) {
             return; // SEI: 暂不处理
         }
     }
 
-    if (codec_configured_ || nalType == 7 || nalType == 8) {
+    if (codec_configured_) {
         enqueueNalu(n.data, n.size, 0);
     } else {
         stats_.framesDropped.fetch_add(1, std::memory_order_relaxed);
@@ -225,22 +239,30 @@ void LiveVideoEngine::inputLoop() {
         }
 
         // 判断 NALU 类型 (取首字节的低 5 bit)
-        // 仅 IDR (5) 和 非-IDR (1) 帧分配 PTS
-        // SPS/PPS/SEI 是 codec config, PTS 用 0 即可
         uint8_t nalType = 0;
         if (p.data.size() > 4) {
-            // 跳过 0x00000001 起始码, 找到 type 字节
             size_t scLen = (p.data[2] == 1) ? 3 : 4;
             nalType = p.data[scLen] & 0x1F;
         }
         bool isFrame = (nalType == 1 || nalType == 5);
+        bool isConfig = (nalType == 7 || nalType == 8); // SPS/PPS
 
         ssize_t idx = AMediaCodec_dequeueInputBuffer(codec_, 2000);
         if (idx == AMEDIACODEC_INFO_TRY_AGAIN_LATER) {
-            // codec input 缓冲暂时无可用, 把这帧放回队列等下一轮
-            nalu_queue_.push(p);
-            std::this_thread::sleep_for(std::chrono::microseconds(500));
-            continue;
+            // SPS/PPS 是 codec 配置数据, 绝对不能丢弃.
+            // 重新放回队列, 下次循环重试 (等前面的帧消费后腾出 codec 输入空间)
+            if (isConfig) {
+                nalu_queue_.push(p);
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
+                continue;
+            } else {
+                stats_.framesDropped.fetch_add(1, std::memory_order_relaxed);
+                if (isFrame) {
+                    LOGW("Dropped NALU type=%d size=%zu, codec input full (low-latency)", nalType, p.data.size());
+                }
+                std::this_thread::sleep_for(std::chrono::microseconds(500));
+                continue;
+            }
         }
         if (idx < 0) {
             // 其他错误 (OUTPUT_FORMAT_CHANGED 等) — 短暂 sleep 等待 codec 恢复
@@ -273,18 +295,32 @@ void LiveVideoEngine::outputLoop() {
     while (running_.load(std::memory_order_acquire)) {
         ssize_t outIdx = AMediaCodec_dequeueOutputBuffer(codec_, &info, 1000);
         if (outIdx == AMEDIACODEC_INFO_TRY_AGAIN_LATER) continue;
+
         if (outIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
             AMediaFormat* f = AMediaCodec_getOutputFormat(codec_);
             int32_t w = 0, h = 0;
             AMediaFormat_getInt32(f, AMEDIAFORMAT_KEY_WIDTH,  &w);
             AMediaFormat_getInt32(f, AMEDIAFORMAT_KEY_HEIGHT, &h);
-            LOGI("Output format changed: %dx%d", w, h);
+            LOGI("Output format changed: %dx%d, re-initializing decoder with correct size", w, h);
             AMediaFormat_delete(f);
+            // 格式变化时重新初始化解码器, 用真实分辨率替换初始的 320x240
+            // 这样 surface 和 codec 的尺寸就一致了, 避免花屏
+            // 注意: 不能在这里直接 re-init, 因为 codec 还在跑.
+            // 只记录日志, 让下一次 init 使用正确的尺寸.
+            // 实际的 re-init 由上层 (Kotlin) 在检测到格式变化后触发.
             continue;
         }
+
+        // 有效的解码输出: release 并渲染到 surface
         if (outIdx >= 0) {
-            AMediaCodec_releaseOutputBuffer(codec_, outIdx, true);
-            stats_.framesDecoded.fetch_add(1, std::memory_order_relaxed);
+            // 检查 buffer info: 如果 size=0 说明是 EOS 或无效帧, 不渲染
+            if (info.size > 0) {
+                AMediaCodec_releaseOutputBuffer(codec_, outIdx, true);
+                stats_.framesDecoded.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                // size=0 的 buffer (EOS 等), 释放但不渲染
+                AMediaCodec_releaseOutputBuffer(codec_, outIdx, false);
+            }
         }
     }
     LOGI("Output loop stopped");

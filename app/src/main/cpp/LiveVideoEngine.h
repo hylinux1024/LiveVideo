@@ -89,6 +89,18 @@ public:
         tail_cache_ = 0;
     }
 
+    // 当前元素个数 (单消费者场景下精确, 生产者侧用于容量预检)
+    size_t size() const {
+        size_t h = head_.load(std::memory_order_acquire);
+        size_t t = tail_.load(std::memory_order_relaxed); // 生产者是 tail_ 唯一写者
+        return (t - h) & MASK;
+    }
+
+    // 可用空间 (CAP - 1 - size), 留 1 槽防止满=空歧义
+    size_t freeCapacity() const {
+        return CAP - 1 - size();
+    }
+
 private:
     static constexpr size_t MASK = CAP - 1;
     T                       buffer_[CAP];
@@ -283,7 +295,7 @@ private:
         std::vector<uint8_t> data;
         int64_t              pts;
     };
-    LockFreeRingBuffer<PendingNalu, 64> nalu_queue_;
+    LockFreeRingBuffer<PendingNalu, 128> nalu_queue_;
 
     // 缓存最近一次 SPS/PPS, 供 IDR 到来时一起送入解码器
     std::vector<uint8_t> cached_sps_;

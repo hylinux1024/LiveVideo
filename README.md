@@ -2,8 +2,6 @@
 
 低延迟 Android 视频流接收 App (学习项目), native 层 SRT 接收 + 硬件解码 + 零拷贝 OES 纹理渲染。
 
-> 本项目在 GitHub 上名为 **LiveVideo** ([hylinux1024/LiveVideo](https://github.com/hylinux1024/LiveVideo)), 仓库根目录也叫 `LiveVideo`, C++ 类 `LiveVideoEngine`。包名已统一为 `com.livevideo.media`。
-
 - 推流: ffmpeg / OBS (SRT / UDP)
 - 接收: C++ native 线程 + libsrt
 - 解码: AMediaCodec (硬解) + Surface 直接投到 OES 纹理
