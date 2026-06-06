@@ -1,4 +1,4 @@
-package com.drone.media
+package com.livevideo.media
 
 import android.content.Context
 import android.graphics.SurfaceTexture
@@ -25,7 +25,7 @@ import javax.microedition.khronos.opengles.GL10
  *
  *  renderMode = RENDERMODE_WHEN_DIRTY: 没有新帧就不画, 节省低端机算力
  */
-class DroneVideoView @JvmOverloads constructor(
+class LiveVideoView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : GLSurfaceView(context, attrs), GLSurfaceView.Renderer {
 
@@ -116,7 +116,7 @@ class DroneVideoView @JvmOverloads constructor(
         val surface = Surface(surfaceTexture)
         // 视频尺寸由 ffmpeg 推流端决定, 这里给一个与推流一致的初始值 (320x240 baseline)
         // 实际分辨率以码流 SPS 为准, 解码器会通过 Output format changed 回调报出真实尺寸
-        DroneEngineJNI.initDecoder("video/avc", 320, 240, surface)
+        LiveVideoEngineJNI.initDecoder("video/avc", 320, 240, surface)
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -160,7 +160,7 @@ class DroneVideoView @JvmOverloads constructor(
 
         // 3. HUD 叠层: 等真实遥测数据接入后再开, 现在只是占位假数据
         //    注释掉避免污染视频画面
-        // DroneEngineJNI.queryTelemetry(currentTsNs / 1000L, glLocalTelemetry)
+        // LiveVideoEngineJNI.queryTelemetry(currentTsNs / 1000L, glLocalTelemetry)
         // drawHud(glLocalTelemetry, osdProjectionMatrix())
     }
 
@@ -171,7 +171,7 @@ class DroneVideoView @JvmOverloads constructor(
      */
     fun updateTelemetry(t: TelemetryData) {
         // 直接转发给 native, 避免和 GL 线程竞争 Kotlin 端的对象
-        DroneEngineJNI.injectTelemetry(t)
+        LiveVideoEngineJNI.injectTelemetry(t)
     }
 
     // ============================================================
@@ -283,7 +283,7 @@ class DroneVideoView @JvmOverloads constructor(
     }
 
     companion object {
-        private const val TAG = "DroneVideoView"
+        private const val TAG = "LiveVideoView"
 
         // OES 纹理顶点 shader —— 只需要把顶点位置和纹理坐标透传
         private val VERTEX_SHADER = """

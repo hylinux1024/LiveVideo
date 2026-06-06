@@ -1,4 +1,4 @@
-package com.drone.media
+package com.livevideo.media
 
 /**
  * 硬件解码器 + 零拷贝渲染 JNI 桥接
@@ -8,9 +8,9 @@ package com.drone.media
  *  - 在 GL 线程上同步查询遥测
  *  - 读取统计
  */
-object DroneEngineJNI {
+object LiveVideoEngineJNI {
     init {
-        System.loadLibrary("dronemedia")
+        System.loadLibrary("livevideo")
     }
 
     /**

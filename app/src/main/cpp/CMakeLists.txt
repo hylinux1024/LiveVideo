@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project("dronemedia")
+project("livevideo")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,21 +25,21 @@ add_subdirectory(srt)
 # ============================================================
 # 主引擎
 # ============================================================
-add_library(dronemedia SHARED
-            DroneMediaEngine.cpp
+add_library(livevideo SHARED
+            LiveVideoEngine.cpp
             SrtListener.cpp)
 
-target_compile_options(dronemedia PRIVATE
+target_compile_options(livevideo PRIVATE
     -fvisibility=hidden
     -fvisibility-inlines-hidden
     -ffunction-sections
     -fdata-sections)
 
-target_link_options(dronemedia PRIVATE
+target_link_options(livevideo PRIVATE
     -Wl,--gc-sections
     -Wl,--exclude-libs,ALL)
 
-target_include_directories(dronemedia PRIVATE
+target_include_directories(livevideo PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/srt
     ${CMAKE_CURRENT_SOURCE_DIR}/srt/srtcore  # libsrt 把 srt.h 放在 srtcore/ 下
@@ -49,7 +49,7 @@ target_include_directories(dronemedia PRIVATE
 
 # libsrt 自带的 pthread 依赖, Android NDK 已经提供
 find_library(log-lib log)
-target_link_libraries(dronemedia
+target_link_libraries(livevideo
     android
     ${log-lib}
     mediandk

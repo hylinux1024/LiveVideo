@@ -1,6 +1,6 @@
 // SrtListener.cpp
 // SRT (Secure Reliable Transport) 监听器, 跑在独立 native 线程上
-// 收包后直接通过 JNI 回调 DroneEngineJNI.feedStream, 不需要 Kotlin 端做接收线程
+// 收包后直接通过 JNI 回调 LiveVideoEngineJNI.feedStream, 不需要 Kotlin 端做接收线程
 #include <jni.h>
 #include <android/log.h>
 // 头文件原始路径是 srt/srt.h, 但我们走 in-tree 集成,
@@ -18,14 +18,14 @@
 namespace {
 
 JavaVM* g_jvm_srt = nullptr;
-jclass  g_engine_class = nullptr;   // com.drone.media.DroneEngineJNI
+jclass  g_engine_class = nullptr;   // com.livevideo.media.LiveVideoEngineJNI
 jmethodID g_feedStream_mid = nullptr;
 
 void ensureJniBindings(JNIEnv* env) {
     if (g_engine_class != nullptr) return;
-    jclass cls = env->FindClass("com/drone/media/DroneEngineJNI");
+    jclass cls = env->FindClass("com/livevideo/media/LiveVideoEngineJNI");
     if (cls == nullptr) {
-        SRT_LOGE("DroneEngineJNI class not found (wrong classloader?)");
+        SRT_LOGE("LiveVideoEngineJNI class not found (wrong classloader?)");
         return;
     }
     g_engine_class = (jclass)env->NewGlobalRef(cls);
@@ -35,7 +35,7 @@ void ensureJniBindings(JNIEnv* env) {
     if (g_feedStream_mid == nullptr) {
         SRT_LOGE("feedStream method not found");
     } else {
-        SRT_LOGI("JNI bindings cached: DroneEngineJNI.feedStream([B J)V");
+        SRT_LOGI("JNI bindings cached: LiveVideoEngineJNI.feedStream([B J)V");
     }
 }
 
@@ -219,7 +219,7 @@ SrtListenerImpl* g_listener = nullptr;
 // ============================================================
 extern "C" {
 
-// 由 DroneMediaEngine.cpp 的 JNI_OnLoad 调用, 把 JavaVM 传过来并初始化 libsrt
+// 由 LiveVideoEngine.cpp 的 JNI_OnLoad 调用, 把 JavaVM 传过来并初始化 libsrt
 // 注: 必须用 JNIEXPORT (默认 visibility=default) 否则被 -fvisibility=hidden
 // 隐藏后, 另一个 .cpp 文件的 JNI_OnLoad 引用不到, 会导致 undefined symbol
 __attribute__((visibility("default"))) void initSrtSubsystem(JavaVM* vm) {
@@ -238,18 +238,18 @@ __attribute__((visibility("default"))) void cleanupSrtSubsystem() {
 // 在主线程上做 JNI 绑定, 缓存 class 和 methodID
 // 必须在 Kotlin `object` 加载完成后调用 (SrtBridge.init 时机刚好)
 JNIEXPORT void JNICALL
-Java_com_drone_media_SrtBridge_nativeInitBindings(JNIEnv* env, jclass) {
+Java_com_livevideo_media_SrtBridge_nativeInitBindings(JNIEnv* env, jclass) {
     ensureJniBindings(env);
 }
 
 JNIEXPORT void JNICALL
-Java_com_drone_media_SrtBridge_nativeStart(JNIEnv* /*env*/, jclass, jint port) {
+Java_com_livevideo_media_SrtBridge_nativeStart(JNIEnv* /*env*/, jclass, jint port) {
     if (g_listener == nullptr) g_listener = new SrtListenerImpl();
     g_listener->start((int)port);
 }
 
 JNIEXPORT void JNICALL
-Java_com_drone_media_SrtBridge_nativeStop(JNIEnv* /*env*/, jclass) {
+Java_com_livevideo_media_SrtBridge_nativeStop(JNIEnv* /*env*/, jclass) {
     if (g_listener != nullptr) g_listener->stop();
 }
 

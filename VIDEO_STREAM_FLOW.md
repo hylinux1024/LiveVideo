@@ -1,4 +1,4 @@
-# DroneMedia 视频流播放流程
+# LiveVideo 视频流播放流程
 
 ## 0. 端到端架构
 
@@ -8,7 +8,7 @@
 │  192.168.31.x │  1234/1236 │  srt_listen + srt_recvmsg  │  OES 纹理 │  硬件解码器   │
 └──────────────┘            │           │                 │           └──────┬───────┘
                             │           ▼ JNI 回调        │                  │ GraphicBuffer
-                            │  DroneEngineJNI.feedStream  │                  ▼
+                            │  LiveVideoEngineJNI.feedStream  │                  ▼
                             │           │                 │           ┌──────────────┐
                             │           ▼                 │           │ SurfaceTexture│
                             │  H264Demuxer.scan           │           │  OES 纹理     │
@@ -56,7 +56,7 @@ ffmpeg -re -i test.mp4 \
 
 ### 2.1 启动流程
 
-`MainActivity.onCreate` → `SrtBridge` 触发 `System.loadLibrary("dronemedia")` → `JNI_OnLoad` → `initSrtSubsystem(vm)` 调 `srt_startup()` → `nativeInitBindings()` 缓存 class/methodID。
+`MainActivity.onCreate` → `SrtBridge` 触发 `System.loadLibrary("livevideo")` → `JNI_OnLoad` → `initSrtSubsystem(vm)` 调 `srt_startup()` → `nativeInitBindings()` 缓存 class/methodID。
 
 `SrtBridge.nativeStart(1234)` → `SrtListenerImpl::start()` → 新建 `std::thread` 跑 `runLoop()`。
 
@@ -90,14 +90,14 @@ loop:
     loop:
       srt_recvmsg(buf, 64KB)
       ↓
-      dispatchPacket → JNI CallStaticVoidMethod(DroneEngineJNI.feedStream)
+      dispatchPacket → JNI CallStaticVoidMethod(LiveVideoEngineJNI.feedStream)
 ```
 
 `dispatchPacket` 在 native 线程上, JNIEnv 通过 `GetEnv`/`AttachCurrentThread` 拿。
 
 ---
 
-## 3. JNI 桥接 (`SrtListener.cpp → DroneEngineJNI`)
+## 3. JNI 桥接 (`SrtListener.cpp → LiveVideoEngineJNI`)
 
 ```cpp
 // SrtListener.cpp
@@ -105,14 +105,14 @@ env->CallStaticVoidMethod(g_engine_class, g_feedStream_mid, jbyteArray, pts=0);
 ```
 
 ```kotlin
-// DroneEngineJNI.kt
+// LiveVideoEngineJNI.kt
 @JvmStatic
 external fun feedStream(data: ByteArray, pts: Long = 0L)
 ```
 
 ```cpp
-// DroneMediaEngine.cpp
-Java_com_drone_media_DroneEngineJNI_feedStream(JNIEnv* env, jclass, jbyteArray, jlong) {
+// LiveVideoEngine.cpp
+Java_com_livevideo_media_LiveVideoEngineJNI_feedStream(JNIEnv* env, jclass, jbyteArray, jlong) {
     g_engine->feedStream(buf, len, pts);
 }
 ```
@@ -123,7 +123,7 @@ Java_com_drone_media_DroneEngineJNI_feedStream(JNIEnv* env, jclass, jbyteArray, 
 
 ---
 
-## 4. H.264 Demuxer (`DroneMediaEngine.h:H264Demuxer`)
+## 4. H.264 Demuxer (`LiveVideoEngine.h:H264Demuxer`)
 
 把不规整的字节流切成完整 NALU。
 
@@ -149,7 +149,7 @@ onNalu({data: naluStart, size: buffer_.size() - naluStart});
 
 修法: `nextSc < 0` 时 `break`, 不上报, 保留 buffer 等下个 SRT 包拼上, 重新从已保留的起始码开始扫描。
 
-### 4.3 NALU 分类 (`DroneMediaEngine.cpp:handleNalu`)
+### 4.3 NALU 分类 (`LiveVideoEngine.cpp:handleNalu`)
 
 | nalType | 含义 | 处理 |
 |---------|------|------|
@@ -165,7 +165,7 @@ onNalu({data: naluStart, size: buffer_.size() - naluStart});
 
 ## 5. 硬件解码 (`AMediaCodec`)
 
-### 5.1 初始化 (`DroneMediaEngine::init`)
+### 5.1 初始化 (`LiveVideoEngine::init`)
 
 ```cpp
 AMediaCodec_createDecoderByType("video/avc")
@@ -219,7 +219,7 @@ loop:
 
 ---
 
-## 6. 渲染 (`DroneVideoView`)
+## 6. 渲染 (`LiveVideoView`)
 
 ### 6.1 初始化
 
@@ -228,7 +228,7 @@ GLES20.glGenTextures → oesTextureId
 GLES20.glBindTexture(GL_TEXTURE_EXTERNAL_OES, oesTextureId)
 SurfaceTexture(oesTextureId)   // 把纹理 ID 交给 SurfaceTexture
 Surface(surfaceTexture)        // 包装成 Surface 传给 C++
-DroneEngineJNI.initDecoder("video/avc", 320, 240, surface)
+LiveVideoEngineJNI.initDecoder("video/avc", 320, 240, surface)
 ```
 
 ### 6.2 着色器
@@ -292,8 +292,8 @@ glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)    // 画全屏四边形
 | Main (UI) | Android | HUD 更新, 模式切换, 统计刷新 |
 | GL Render | GLSurfaceView | `updateTexImage` + `glDrawArrays` |
 | SRT Native | `SrtListener::runLoop` | `srt_listen`/`srt_recvmsg`, JNI 回调 `feedStream` |
-| Input | `DroneMediaEngine::start` | `nalu_queue.pop` → `AMediaCodec_dequeueInputBuffer` → `queueInputBuffer` |
-| Output | `DroneMediaEngine::start` | `AMediaCodec_dequeueOutputBuffer` → `releaseOutputBuffer(true)` |
+| Input | `LiveVideoEngine::start` | `nalu_queue.pop` → `AMediaCodec_dequeueInputBuffer` → `queueInputBuffer` |
+| Output | `LiveVideoEngine::start` | `AMediaCodec_dequeueOutputBuffer` → `releaseOutputBuffer(true)` |
 
 SPSC 队列 `LockFreeRingBuffer<Nalu, 64>` 解耦网络接收和解码输入, `relaxed/acquire/release` 内存序避免 false sharing。
 
@@ -304,7 +304,7 @@ SPSC 队列 `LockFreeRingBuffer<Nalu, 64>` 解耦网络接收和解码输入, `r
 ## 8. 统计 / 调试
 
 ```kotlin
-val stats = DroneEngineJNI.getStats()  // [IN, DEC, DROP, parseErr]
+val stats = LiveVideoEngineJNI.getStats()  // [IN, DEC, DROP, parseErr]
 ```
 
 | 字段 | 含义 | 异常诊断 |
@@ -428,7 +428,7 @@ ffmpeg 推的 320x240 baseline 30fps 流的某个时间片, demuxer 切出来大
 
 ### 10.6 对应代码
 
-`DroneMediaEngine.cpp:handleNalu()`:
+`LiveVideoEngine.cpp:handleNalu()`:
 ```cpp
 uint8_t nalType = n.data[scLen] & 0x1F;  // 取低 5 位就是 type
 if (nalType == 7) cached_sps_ = ...;     // 缓存 SPS
@@ -442,7 +442,7 @@ if (nalType == 1) 下发 P 帧;             // 普通帧
 if (nalType == 6) 跳过;                  // SEI 不用
 ```
 
-`DroneMediaEngine.cpp:inputLoop()`:
+`LiveVideoEngine.cpp:inputLoop()`:
 ```cpp
 // PTS 只给 IDR/P, 不给 SPS/PPS (它们是 codec config, 不算"帧")
 bool isFrame = (nalType == 1 || nalType == 5);

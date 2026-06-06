@@ -4,12 +4,12 @@ plugins {
 }
 
 android {
-    namespace = "com.drone.media"
+    namespace = "com.livevideo.media"
     compileSdk = 36
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
-        applicationId = "com.drone.media"
+        applicationId = "com.livevideo.media"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

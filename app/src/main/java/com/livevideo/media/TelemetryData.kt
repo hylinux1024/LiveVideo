@@ -1,4 +1,4 @@
-package com.drone.media
+package com.livevideo.media
 
 /**
  * 遥测数据 (与 C++ 端 TelemetryData 字段一一对应)

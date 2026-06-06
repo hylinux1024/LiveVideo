@@ -1,4 +1,4 @@
-package com.drone.media
+package com.livevideo.media
 
 /**
  * SRT (Secure Reliable Transport) 桥接
@@ -15,18 +15,18 @@ package com.drone.media
  */
 object SrtBridge {
     init {
-        System.loadLibrary("dronemedia")
+        System.loadLibrary("livevideo")
         // 必须在主线程上做 JNI 绑定: SRT 的 native 线程 bootstrap classloader 找不到 app 类
         nativeInitBindings()
     }
 
     /**
-     * 一次性 JNI 绑定: 在主线程上 FindClass("DroneEngineJNI") + GetStaticMethodID("feedStream"),
+     * 一次性 JNI 绑定: 在主线程上 FindClass("LiveVideoEngineJNI") + GetStaticMethodID("feedStream"),
      * 缓存成全局引用. 后续 SRT 线程直接拿缓存, 不再 FindClass.
      */
     private external fun nativeInitBindings()
 
-    /** 启动 SRT 监听, 在 native 线程 accept/recv, 收到后直接回调 DroneEngineJNI.feedStream */
+    /** 启动 SRT 监听, 在 native 线程 accept/recv, 收到后直接回调 LiveVideoEngineJNI.feedStream */
     external fun nativeStart(port: Int)
 
     /** 停止 SRT 监听 (会 close socket, ffmpeg 端会立即看到 disconnect, 走它的 retry 逻辑) */

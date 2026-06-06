@@ -1,4 +1,4 @@
-package com.drone.media
+package com.livevideo.media
 
 import android.os.Bundle
 import android.os.Handler
@@ -21,7 +21,7 @@ import androidx.appcompat.app.AppCompatActivity
  */
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var videoView: DroneVideoView
+    private lateinit var videoView: LiveVideoView
     private lateinit var statsText: TextView
 
     private val ui = Handler(Looper.getMainLooper())
@@ -92,7 +92,7 @@ class MainActivity : AppCompatActivity() {
         // 不然 OS 强杀时 ffmpeg 那边要等 TCP keepalive 超时才知道挂了
         try { SrtBridge.nativeStop() } catch (_: Throwable) {}
         try {
-            DroneEngineJNI.release()
+            LiveVideoEngineJNI.release()
         } catch (t: Throwable) {
             Log.e(TAG, "release failed", t)
         }
@@ -120,7 +120,7 @@ class MainActivity : AppCompatActivity() {
     private fun startUdpSource() {
         Log.i(TAG, "Switching to UDP receive mode on :$UDP_PORT")
         val src = UdpVideoSource(UDP_PORT) { bytes, _ ->
-            DroneEngineJNI.feedStream(bytes, 0L)
+            LiveVideoEngineJNI.feedStream(bytes, 0L)
         }
         udpSource = src
         src.start()
@@ -135,7 +135,7 @@ class MainActivity : AppCompatActivity() {
     private val statsUpdater = object : Runnable {
         override fun run() {
             try {
-                val stats = DroneEngineJNI.getStats()
+                val stats = LiveVideoEngineJNI.getStats()
                 val inb   = stats[0]
                 val dec   = stats[1]
                 val drop  = stats[2]

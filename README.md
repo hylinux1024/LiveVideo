@@ -1,6 +1,8 @@
-# DroneMedia
+# LiveVideo
 
 低延迟 Android 视频流接收 App (学习项目), native 层 SRT 接收 + 硬件解码 + 零拷贝 OES 纹理渲染。
+
+> 本项目在 GitHub 上名为 **LiveVideo** ([hylinux1024/LiveVideo](https://github.com/hylinux1024/LiveVideo)), 仓库根目录也叫 `LiveVideo`, C++ 类 `LiveVideoEngine`。包名已统一为 `com.livevideo.media`。
 
 - 推流: ffmpeg / OBS (SRT / UDP)
 - 接收: C++ native 线程 + libsrt
@@ -8,7 +10,10 @@
 - 渲染: GLSurfaceView, 零拷贝
 - 端到端延迟: 同 WiFi 实测 80-120ms
 
-详细架构见 [VIDEO_STREAM_FLOW.md](./VIDEO_STREAM_FLOW.md)。
+| 文档 | 内容 |
+|------|------|
+| [VIDEO_BASICS.md](./VIDEO_BASICS.md) | 视频流基础 (YUV / H.264 / NALU / 压缩原理) |
+| [VIDEO_STREAM_FLOW.md](./VIDEO_STREAM_FLOW.md) | 本项目详细架构 (demuxer / 线程模型 / 零拷贝路径) |
 
 ---
 
@@ -36,7 +41,7 @@ ffmpeg -protocols 2>&1 | grep -E "^srt$"
 ## 2. 编译
 
 ```bash
-cd DroneMedia
+cd LiveVideo          # 本地工程目录
 ./gradlew :app:assembleDebug
 ```
 
@@ -53,7 +58,7 @@ cd DroneMedia
 ```bash
 adb devices                          # 确认设备
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.drone.media/.MainActivity
+adb shell am start -n com.livevideo.media/.MainActivity
 ```
 
 查手机 IP (跟 Mac 同 WiFi):
@@ -123,7 +128,7 @@ SRT  →  UDP  →  SRT  →  ...
 
 ```bash
 adb logcat -c
-adb logcat -v color DroneMediaEngine:* SrtListener:* AndroidRuntime:E *:S
+adb logcat -v color LiveVideoEngine:* SrtListener:* AndroidRuntime:E *:S
 ```
 
 正常推流时的关键日志:
@@ -133,7 +138,7 @@ SrtListener: SRT listening on 0.0.0.0:1234 (latency=120ms)
 SrtListener: Client connected: 192.168.31.x:xxxxx
 SrtListener: pkt #1: 1316 bytes, head=[00 00 00 01 67 ...]   ← SPS
 SrtListener: pkt #2: 1316 bytes, head=[00 00 00 01 41 ...]   ← P 帧
-DroneMediaEngine: Output format changed: 320x240             ← 解码器认了 SPS
+LiveVideoEngine: Output format changed: 320x240             ← 解码器认了 SPS
 ```
 
 ### 7.2 右上角统计角标
@@ -172,15 +177,15 @@ DROP 0
 app/
 ├── src/main/
 │   ├── cpp/
-│   │   ├── DroneMediaEngine.h / .cpp    # 解码器 + demuxer + 线程模型
+│   │   ├── LiveVideoEngine.h / .cpp    # 解码器 + demuxer + 线程模型
 │   │   ├── SrtListener.cpp              # SRT 接收 + JNI 回调 feedStream
 │   │   ├── srt/                         # libsrt 1.5.4 源码 (子项目编译)
 │   │   └── CMakeLists.txt
-│   ├── java/com/drone/media/
+│   ├── java/com/livevideo/media/
 │   │   ├── MainActivity.kt              # 模式切换 + HUD 统计
-│   │   ├── DroneVideoView.kt            # GLSurfaceView + OES shader
+│   │   ├── LiveVideoView.kt            # GLSurfaceView + OES shader
 │   │   ├── SrtBridge.kt                 # SRT JNI 桥接
-│   │   ├── DroneEngineJNI.kt            # 解码器 JNI 桥接
+│   │   ├── LiveVideoEngineJNI.kt            # 解码器 JNI 桥接
 │   │   ├── TelemetryData.kt             # 遥测数据 (未接真数据)
 │   │   └── UdpVideoSource.kt            # UDP 接收 (调试用)
 │   └── res/                             # layout / string / theme
@@ -197,6 +202,6 @@ VIDEO_STREAM_FLOW.md                     # 详细架构文档
 |------|---------|------|----------|
 | SRT 延迟 | `SrtListener.cpp:97` | 120ms | 抗 30% 丢包的下限, 同 WiFi 可降到 60-80ms |
 | 解码器尺寸 hint | `MainActivity.kt:71` | 320x240 | 跟推流端实际尺寸对齐 |
-| 帧率假设 | `DroneMediaEngine.cpp:248` | 30fps | 改 `input_pts_ += 33333` 为目标间隔 (微秒) |
-| 大核亲和 | `DroneMediaEngine.cpp:115` | 后 4 核 | `big.LITTLE 4+4` 适用, 8 核全绑需改 `n - 4` → 0 |
-| SCHED_FIFO 优先级 | `DroneMediaEngine.cpp:118-119` | 70/80 | 需要 root 或 system 权限, 否则静默降级 |
+| 帧率假设 | `LiveVideoEngine.cpp:248` | 30fps | 改 `input_pts_ += 33333` 为目标间隔 (微秒) |
+| 大核亲和 | `LiveVideoEngine.cpp:115` | 后 4 核 | `big.LITTLE 4+4` 适用, 8 核全绑需改 `n - 4` → 0 |
+| SCHED_FIFO 优先级 | `LiveVideoEngine.cpp:118-119` | 70/80 | 需要 root 或 system 权限, 否则静默降级 |

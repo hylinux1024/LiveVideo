@@ -1,4 +1,4 @@
-// DroneMediaEngine.h
+// LiveVideoEngine.h
 // 低延迟图传引擎头文件：H.264 NALU 解析 + 硬件解码 + 零拷贝 OES 纹理
 #pragma once
 
@@ -24,7 +24,7 @@
 // 宏 / 日志
 // ============================================================
 #ifndef LOG_TAG
-#define LOG_TAG "DroneMediaEngine"
+#define LOG_TAG "LiveVideoEngine"
 #endif
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN,  LOG_TAG, __VA_ARGS__)
@@ -234,12 +234,12 @@ private:
 };
 
 // ============================================================
-// DroneMediaEngine：解码器 + 解析 + 帧统计
+// LiveVideoEngine：解码器 + 解析 + 帧统计
 // ============================================================
-class DroneMediaEngine {
+class LiveVideoEngine {
 public:
-    DroneMediaEngine() = default;
-    ~DroneMediaEngine() { release(); }
+    LiveVideoEngine() = default;
+    ~LiveVideoEngine() { release(); }
 
     // 初始化硬件解码器
     // mime:  "video/avc" (H.264) 或 "video/hevc" (H.265)

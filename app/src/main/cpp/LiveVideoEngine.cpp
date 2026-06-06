@@ -1,7 +1,7 @@
-// DroneMediaEngine.cpp
+// LiveVideoEngine.cpp
 // 低延迟图传引擎实现：H.264 NALU 解析 + 硬件解码 + 零拷贝 OES 纹理
 // 目标: 四核低端 Android 设备, 端到端延迟 < 100ms
-#include "DroneMediaEngine.h"
+#include "LiveVideoEngine.h"
 #include <android/log.h>
 #include <android/native_window_jni.h>
 #include <functional>
@@ -28,10 +28,10 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* /*reserved*/) {
     return JNI_VERSION_1_6;
 }
 
-// 缓存 TelemetryData 的字段 id (Kotlin 端 com.drone.media.TelemetryData)
+// 缓存 TelemetryData 的字段 id (Kotlin 端 com.livevideo.media.TelemetryData)
 static bool ensureTelemetryClass(JNIEnv* env) {
     if (g_telemetry_class != nullptr) return true;
-    jclass cls = env->FindClass("com/drone/media/TelemetryData");
+    jclass cls = env->FindClass("com/livevideo/media/TelemetryData");
     if (cls == nullptr) {
         LOGE("TelemetryData class not found");
         return false;
@@ -47,9 +47,9 @@ static bool ensureTelemetryClass(JNIEnv* env) {
 }
 
 // ============================================================
-// DroneMediaEngine: 初始化
+// LiveVideoEngine: 初始化
 // ============================================================
-void DroneMediaEngine::init(JNIEnv* env, jstring jMime, jint width, jint height, jobject surface) {
+void LiveVideoEngine::init(JNIEnv* env, jstring jMime, jint width, jint height, jobject surface) {
     if (codec_ != nullptr) {
         LOGW("init() called twice, releasing previous instance first");
         release();
@@ -111,21 +111,21 @@ void DroneMediaEngine::init(JNIEnv* env, jstring jMime, jint width, jint height,
     LOGI("Decoder initialized: %s %dx%d (zero-copy surface)", mime_.c_str(), width_, height_);
 }
 
-void DroneMediaEngine::start() {
+void LiveVideoEngine::start() {
     if (running_.exchange(true)) return;
-    input_thread_  = std::thread(&DroneMediaEngine::inputLoop, this);
-    output_thread_ = std::thread(&DroneMediaEngine::outputLoop, this);
+    input_thread_  = std::thread(&LiveVideoEngine::inputLoop, this);
+    output_thread_ = std::thread(&LiveVideoEngine::outputLoop, this);
     RealTimeThread::pinToBigCores(input_thread_,  80);
     RealTimeThread::pinToBigCores(output_thread_, 70);
 }
 
-void DroneMediaEngine::stop() {
+void LiveVideoEngine::stop() {
     running_.store(false);
     if (input_thread_.joinable())  input_thread_.join();
     if (output_thread_.joinable()) output_thread_.join();
 }
 
-void DroneMediaEngine::release() {
+void LiveVideoEngine::release() {
     stop();
     if (codec_ != nullptr) {
         AMediaCodec_stop(codec_);
@@ -155,7 +155,7 @@ void DroneMediaEngine::release() {
 // ============================================================
 // 网络 → 解码器 (生产者 → SPSC 队列 → 解码器 input thread)
 // ============================================================
-void DroneMediaEngine::feedStream(const uint8_t* data, size_t size, int64_t pts) {
+void LiveVideoEngine::feedStream(const uint8_t* data, size_t size, int64_t pts) {
     if (codec_ == nullptr) return;
     static std::atomic<size_t> totalIn{0};
     size_t in = totalIn.fetch_add(size) + size;
@@ -178,7 +178,7 @@ void DroneMediaEngine::feedStream(const uint8_t* data, size_t size, int64_t pts)
     });
 }
 
-void DroneMediaEngine::handleNalu(const H264Demuxer::Nalu& n) {
+void LiveVideoEngine::handleNalu(const H264Demuxer::Nalu& n) {
     uint8_t nalType = n.type;
     if (mime_ == "video/avc") {
         if (nalType == 7) {
@@ -206,7 +206,7 @@ void DroneMediaEngine::handleNalu(const H264Demuxer::Nalu& n) {
     }
 }
 
-void DroneMediaEngine::enqueueNalu(const uint8_t* data, size_t size, int64_t pts) {
+void LiveVideoEngine::enqueueNalu(const uint8_t* data, size_t size, int64_t pts) {
     PendingNalu p;
     p.data.assign(data, data + size);
     p.pts = pts;
@@ -215,7 +215,7 @@ void DroneMediaEngine::enqueueNalu(const uint8_t* data, size_t size, int64_t pts
     }
 }
 
-void DroneMediaEngine::inputLoop() {
+void LiveVideoEngine::inputLoop() {
     LOGI("Input loop started");
     while (running_.load(std::memory_order_acquire)) {
         PendingNalu p;
@@ -267,7 +267,7 @@ void DroneMediaEngine::inputLoop() {
     LOGI("Input loop stopped");
 }
 
-void DroneMediaEngine::outputLoop() {
+void LiveVideoEngine::outputLoop() {
     LOGI("Output loop started");
     AMediaCodecBufferInfo info;
     while (running_.load(std::memory_order_acquire)) {
@@ -293,13 +293,13 @@ void DroneMediaEngine::outputLoop() {
 // ============================================================
 // 遥测: 写入端可以来自任意线程, 读取端在 GL 线程
 // ============================================================
-void DroneMediaEngine::injectTelemetry(const TelemetryData& t) {
+void LiveVideoEngine::injectTelemetry(const TelemetryData& t) {
     std::lock_guard<std::mutex> lock(telemetry_mutex_);
     latest_telemetry_    = t;
     has_latest_telemetry_ = true;
 }
 
-bool DroneMediaEngine::queryTelemetry(int64_t ptsUs, TelemetryData& out) {
+bool LiveVideoEngine::queryTelemetry(int64_t ptsUs, TelemetryData& out) {
     std::lock_guard<std::mutex> lock(telemetry_mutex_);
     if (!has_latest_telemetry_) return false;
     out = latest_telemetry_;
@@ -309,19 +309,19 @@ bool DroneMediaEngine::queryTelemetry(int64_t ptsUs, TelemetryData& out) {
 // ============================================================
 // JNI 导出
 // ============================================================
-static DroneMediaEngine* g_engine = new DroneMediaEngine();
+static LiveVideoEngine* g_engine = new LiveVideoEngine();
 
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_com_drone_media_DroneEngineJNI_initDecoder(JNIEnv* env, jobject,
+Java_com_livevideo_media_LiveVideoEngineJNI_initDecoder(JNIEnv* env, jobject,
                                                 jstring mime, jint width, jint height, jobject surface) {
     g_engine->init(env, mime, width, height, surface);
     g_engine->start();
 }
 
 JNIEXPORT void JNICALL
-Java_com_drone_media_DroneEngineJNI_feedStream(JNIEnv* env, jclass,
+Java_com_livevideo_media_LiveVideoEngineJNI_feedStream(JNIEnv* env, jclass,
                                                 jbyteArray data, jlong pts) {
     jsize len = env->GetArrayLength(data);
     if (len <= 0) return;
@@ -331,7 +331,7 @@ Java_com_drone_media_DroneEngineJNI_feedStream(JNIEnv* env, jclass,
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_drone_media_DroneEngineJNI_queryTelemetry(JNIEnv* env, jobject,
+Java_com_livevideo_media_LiveVideoEngineJNI_queryTelemetry(JNIEnv* env, jobject,
                                                     jlong ptsUs, jobject outTelemetry) {
     if (!ensureTelemetryClass(env)) return JNI_FALSE;
     TelemetryData t;
@@ -346,7 +346,7 @@ Java_com_drone_media_DroneEngineJNI_queryTelemetry(JNIEnv* env, jobject,
 }
 
 JNIEXPORT void JNICALL
-Java_com_drone_media_DroneEngineJNI_injectTelemetry(JNIEnv* env, jobject, jobject telemetry) {
+Java_com_livevideo_media_LiveVideoEngineJNI_injectTelemetry(JNIEnv* env, jobject, jobject telemetry) {
     if (!ensureTelemetryClass(env)) return;
     TelemetryData t;
     t.pts          = env->GetLongField (telemetry, g_telemetry_pts);
@@ -358,12 +358,12 @@ Java_com_drone_media_DroneEngineJNI_injectTelemetry(JNIEnv* env, jobject, jobjec
 }
 
 JNIEXPORT void JNICALL
-Java_com_drone_media_DroneEngineJNI_release(JNIEnv*, jobject) {
+Java_com_livevideo_media_LiveVideoEngineJNI_release(JNIEnv*, jobject) {
     g_engine->release();
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_com_drone_media_DroneEngineJNI_getStats(JNIEnv* env, jobject) {
+Java_com_livevideo_media_LiveVideoEngineJNI_getStats(JNIEnv* env, jobject) {
     auto& s = g_engine->stats();
     jlongArray arr = env->NewLongArray(4);
     jlong values[4] = {
