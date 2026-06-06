@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    tools:context=".MainActivity">
+
+    <!-- 零拷贝 OES 视频层 -->
+    <com.drone.media.DroneVideoView
+        android:id="@+id/droneVideoView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 丢帧统计角标 -->
+    <TextView
+        android:id="@+id/statsText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp"
+        android:background="@color/black_overlay"
+        android:fontFamily="monospace"
+        android:padding="6dp"
+        android:textColor="@color/hud_white"
+        android:textSize="11sp"
+        android:visibility="gone" />
+
+    <!-- 模式切换按钮 (SRT / UDP) -->
+    <Button
+        android:id="@+id/modeButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        android:background="@color/black_overlay"
+        android:fontFamily="monospace"
+        android:padding="6dp"
+        android:text="Mode: SRT"
+        android:textColor="@color/hud_white"
+        android:textSize="12sp" />
+</FrameLayout>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DroneMedia</string>
+    <string name="hint_no_decoder">当前设备无 H.264 硬件解码器，已降级为软解</string>
+    <string name="hint_dropping">丢帧统计：%1$d / %2$d</string>
+</resources>
